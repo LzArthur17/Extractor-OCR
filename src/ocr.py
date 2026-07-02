@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,37 @@ from PIL import Image, ImageEnhance, ImageOps
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+
+REGIOES_POR_CAMPO = {
+    "renavam": {"renavam"},
+    "placa": {"placa_exercicio"},
+    "exercicio": {"placa_exercicio"},
+    "ano_fabricacao": {"ano_fabricacao_modelo"},
+    "ano_modelo": {"ano_fabricacao_modelo"},
+    "codigo_crv": {"codigo_crv"},
+    "codigo_seguranca_cla": {"codigo_seguranca_cla"},
+    "marca_modelo": {"marca_modelo"},
+    "especie_tipo": {"especie_tipo"},
+    "placa_anterior_uf": {"placa_anterior_chassi"},
+    "chassi": {"placa_anterior_chassi"},
+    "cor": {"cor_combustivel"},
+    "combustivel": {"cor_combustivel"},
+    "categoria": {"categoria_capacidade"},
+    "capacidade": {"categoria_capacidade"},
+    "potencia_cilindrada": {"potencia_pbt"},
+    "peso_bruto_total": {"potencia_pbt"},
+    "motor": {"motor_cmt_eixos_lotacao"},
+    "cmt": {"motor_cmt_eixos_lotacao"},
+    "eixos": {"motor_cmt_eixos_lotacao"},
+    "lotacao": {"motor_cmt_eixos_lotacao"},
+    "carroceria": {"carroceria"},
+    "proprietario": {"proprietario"},
+    "cpf_cnpj": {"cpf_cnpj"},
+    "municipio": {"local_data"},
+    "uf": {"local_data"},
+    "data_emissao": {"local_data"},
+    "observacoes": {"observacoes"},
+}
 
 
 def extrair_texto_documento(path: Path, idioma: str = "por", max_pages: int | None = None) -> str:
@@ -26,6 +58,41 @@ def extrair_texto_documento(path: Path, idioma: str = "por", max_pages: int | No
 
     if suffix in SUPPORTED_EXTENSIONS:
         return ocr_imagem(path, idioma=idioma)
+
+    raise ValueError(f"Tipo de arquivo nao suportado: {path.name}")
+
+
+def extrair_texto_documento_refinado(
+    path: Path,
+    idioma: str = "por",
+    max_pages: int | None = None,
+    timeout_seconds: int = 12,
+    campos_alvo: list[str] | None = None,
+    somente_regioes: bool = False,
+) -> str:
+    """Executa OCR mais agressivo para documentos com baixa confianca."""
+    deadline = time.monotonic() + max(1, timeout_seconds)
+    suffix = path.suffix.lower()
+
+    if suffix == ".pdf":
+        return ocr_pdf_refinado(
+            path,
+            idioma=idioma,
+            max_pages=max_pages,
+            deadline=deadline,
+            campos_alvo=campos_alvo,
+            somente_regioes=somente_regioes,
+        )
+
+    if suffix in SUPPORTED_EXTENSIONS:
+        with Image.open(path) as imagem:
+            return ocr_imagem_refinado(
+                imagem,
+                idioma=idioma,
+                deadline=deadline,
+                campos_alvo=campos_alvo,
+                somente_regioes=somente_regioes,
+            )
 
     raise ValueError(f"Tipo de arquivo nao suportado: {path.name}")
 
@@ -87,27 +154,171 @@ def ocr_imagem(path: Path, idioma: str = "por") -> str:
         return executar_tesseract(imagem, idioma=idioma).strip()
 
 
-def executar_tesseract(imagem: Image.Image, idioma: str = "por") -> str:
-    config = "--psm 6"
+def ocr_pdf_refinado(
+    path: Path,
+    idioma: str,
+    max_pages: int | None,
+    deadline: float,
+    campos_alvo: list[str] | None = None,
+    somente_regioes: bool = False,
+) -> str:
+    partes: list[str] = []
+    documento = fitz.open(path)
     try:
-        return pytesseract.image_to_string(imagem, lang=idioma, config=config)
+        total_paginas = min(len(documento), max_pages) if max_pages else len(documento)
+        for indice in range(total_paginas):
+            if tempo_esgotado(deadline):
+                break
+            pagina = documento[indice]
+            pixmap = pagina.get_pixmap(dpi=420)
+            imagem = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+            partes.append(f"\n--- PAGINA {indice + 1} OCR REFINADO ---")
+            texto = ocr_imagem_refinado(
+                imagem,
+                idioma=idioma,
+                deadline=deadline,
+                campos_alvo=campos_alvo,
+                somente_regioes=somente_regioes,
+            )
+            if texto:
+                partes.append(texto)
+    finally:
+        documento.close()
+    return "\n".join(partes).strip()
+
+
+def ocr_imagem_refinado(
+    imagem: Image.Image,
+    idioma: str,
+    deadline: float,
+    campos_alvo: list[str] | None = None,
+    somente_regioes: bool = False,
+) -> str:
+    partes: list[str] = []
+    imagem_corrigida = corrigir_perspectiva_documento(imagem)
+    regioes_alvo = regioes_para_campos(campos_alvo)
+
+    if somente_regioes:
+        return ocr_regioes_crlv(
+            imagem_corrigida,
+            idioma=idioma,
+            pagina=1,
+            deadline=deadline,
+            regioes_alvo=regioes_alvo,
+        ).strip()
+
+    variantes = preparar_variantes_refinadas(imagem_corrigida)
+
+    for nome, variante in variantes:
+        if tempo_esgotado(deadline):
+            break
+        texto = executar_tesseract(
+            variante,
+            idioma=idioma,
+            config="--psm 6",
+            timeout_seconds=tempo_restante(deadline),
+        ).strip()
+        if texto:
+            partes.append(f"[OCR REFINADO {nome}]\n{texto}")
+
+    if not tempo_esgotado(deadline):
+        texto = executar_tesseract(
+            variantes[0][1],
+            idioma=idioma,
+            config="--psm 11",
+            timeout_seconds=tempo_restante(deadline),
+        ).strip()
+        if texto:
+            partes.append(f"[OCR REFINADO TEXTO ESPARSO]\n{texto}")
+
+    if not tempo_esgotado(deadline):
+        partes.append(
+            ocr_regioes_crlv(
+                imagem_corrigida,
+                idioma=idioma,
+                pagina=1,
+                deadline=deadline,
+                regioes_alvo=regioes_alvo,
+            )
+        )
+
+    return "\n".join(parte for parte in partes if parte).strip()
+
+
+def preparar_variantes_refinadas(imagem: Image.Image) -> list[tuple[str, Image.Image]]:
+    cinza = ImageOps.grayscale(imagem)
+    cinza = ImageEnhance.Contrast(cinza).enhance(2.4)
+    cinza = aumentar_imagem(cinza, largura_minima=1800)
+
+    array = np.array(cinza)
+    denoise = cv2.fastNlMeansDenoising(array, None, 12, 7, 21)
+    adaptativa = cv2.adaptiveThreshold(
+        denoise,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        11,
+    )
+    _, otsu = cv2.threshold(denoise, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    nitida = cv2.filter2D(denoise, -1, kernel)
+
+    return [
+        ("contraste", cinza),
+        ("adaptativo", Image.fromarray(adaptativa)),
+        ("otsu", Image.fromarray(otsu)),
+        ("nitidez", Image.fromarray(nitida)),
+    ]
+
+
+def aumentar_imagem(imagem: Image.Image, largura_minima: int) -> Image.Image:
+    largura, altura = imagem.size
+    if largura >= largura_minima:
+        return imagem
+    escala = largura_minima / max(1, largura)
+    return imagem.resize((int(largura * escala), int(altura * escala)), Image.Resampling.LANCZOS)
+
+
+def executar_tesseract(
+    imagem: Image.Image,
+    idioma: str = "por",
+    config: str = "--psm 6",
+    timeout_seconds: float | None = None,
+) -> str:
+    try:
+        return pytesseract.image_to_string(imagem, lang=idioma, config=config, timeout=timeout_seconds)
     except TesseractError as exc:
         if idioma != "eng" and "Failed loading language" in str(exc):
-            return pytesseract.image_to_string(imagem, lang="eng", config=config)
+            return pytesseract.image_to_string(imagem, lang="eng", config=config, timeout=timeout_seconds)
         raise
+    except RuntimeError:
+        return ""
 
 
-def executar_tesseract_linha(imagem: Image.Image, idioma: str = "por") -> str:
+def executar_tesseract_linha(
+    imagem: Image.Image,
+    idioma: str = "por",
+    timeout_seconds: float | None = None,
+) -> str:
     config = "--psm 7"
     try:
-        return pytesseract.image_to_string(imagem, lang=idioma, config=config)
+        return pytesseract.image_to_string(imagem, lang=idioma, config=config, timeout=timeout_seconds)
     except TesseractError as exc:
         if idioma != "eng" and "Failed loading language" in str(exc):
-            return pytesseract.image_to_string(imagem, lang="eng", config=config)
+            return pytesseract.image_to_string(imagem, lang="eng", config=config, timeout=timeout_seconds)
         raise
+    except RuntimeError:
+        return ""
 
 
-def ocr_regioes_crlv(imagem: Image.Image, idioma: str, pagina: int) -> str:
+def ocr_regioes_crlv(
+    imagem: Image.Image,
+    idioma: str,
+    pagina: int,
+    deadline: float | None = None,
+    regioes_alvo: set[str] | None = None,
+) -> str:
     imagem_corrigida = corrigir_perspectiva_documento(imagem)
     regioes = {
         "renavam": (0.04, 0.13, 0.28, 0.18),
@@ -128,14 +339,39 @@ def ocr_regioes_crlv(imagem: Image.Image, idioma: str, pagina: int) -> str:
         "local_data": (0.54, 0.47, 0.96, 0.54),
         "observacoes": (0.04, 0.78, 0.50, 0.89),
     }
+    if regioes_alvo:
+        regioes = {nome: caixa for nome, caixa in regioes.items() if nome in regioes_alvo}
 
     partes = [f"\n--- PAGINA {pagina} OCR REGIOES CRLV ---"]
     for nome, caixa in regioes.items():
+        if deadline is not None and tempo_esgotado(deadline):
+            break
         recorte = recortar_normalizado(imagem_corrigida, caixa)
-        texto = executar_tesseract_linha(preparar_recorte_para_ocr(recorte), idioma=idioma).strip()
+        texto = executar_tesseract_linha(
+            preparar_recorte_para_ocr(recorte),
+            idioma=idioma,
+            timeout_seconds=tempo_restante(deadline) if deadline is not None else None,
+        ).strip()
         if texto:
             partes.append(f"[REGIAO {nome}] {texto}")
     return "\n".join(partes)
+
+
+def regioes_para_campos(campos: list[str] | None) -> set[str] | None:
+    if not campos:
+        return None
+    regioes: set[str] = set()
+    for campo in campos:
+        regioes.update(REGIOES_POR_CAMPO.get(campo, set()))
+    return regioes or None
+
+
+def tempo_esgotado(deadline: float) -> bool:
+    return time.monotonic() >= deadline
+
+
+def tempo_restante(deadline: float) -> float:
+    return max(0.5, deadline - time.monotonic())
 
 
 def recortar_normalizado(imagem: Image.Image, caixa: tuple[float, float, float, float]) -> Image.Image:

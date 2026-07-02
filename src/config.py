@@ -13,6 +13,9 @@ class Settings:
     ollama_url: str = "http://localhost:11434"
     review_min_score: int = 90
     max_pages: int = 1
+    retry_min_score: int = 85
+    ocr_retry_timeout_seconds: int = 12
+    enable_ocr_retry: bool = True
 
 
 def get_settings() -> Settings:
@@ -24,6 +27,9 @@ def get_settings() -> Settings:
         ollama_url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
         review_min_score=_parse_int(os.getenv("REVIEW_MIN_SCORE"), default=90),
         max_pages=_parse_int(os.getenv("MAX_PAGES"), default=1),
+        retry_min_score=_parse_int(os.getenv("RETRY_MIN_SCORE"), default=85),
+        ocr_retry_timeout_seconds=_parse_int(os.getenv("OCR_RETRY_TIMEOUT_SECONDS"), default=12),
+        enable_ocr_retry=_parse_bool(os.getenv("ENABLE_OCR_RETRY"), default=True),
     )
 
 
@@ -39,3 +45,8 @@ def _parse_int(value: str | None, default: int) -> int:
     except ValueError:
         return default
 
+
+def _parse_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "sim", "on"}

@@ -8,8 +8,9 @@ Pipeline local para processar varios PDFs/imagens de CRLV, extrair texto e retor
 2. O sistema tenta extrair texto direto do PDF.
 3. Se nao houver texto, converte paginas em imagem e usa OCR.
 4. Para CRLV, os campos sao extraidos por regras rapidas.
-5. Opcionalmente, o Ollama pode ser usado como fallback quando as regras nao encontrarem dados suficientes.
-6. A resposta e validada e salva em `saida/resultados.json` e `saida/resultados.xlsx`.
+5. Se o score ficar abaixo de 85, roda uma segunda tentativa de OCR refinado com limite de tempo.
+6. Opcionalmente, o Ollama pode ser usado como fallback quando as regras nao encontrarem dados suficientes.
+7. A resposta e validada e salva em `saida/resultados.json` e `saida/resultados.xlsx`.
 
 ## Instalar
 
@@ -51,6 +52,18 @@ Para reprocessar OCR do zero:
 python -m src.main --force-ocr
 ```
 
+Por padrao, documentos com `score_confianca` menor que 85 passam por retry progressivo por ate 12 segundos. O sistema tenta primeiro OCR apenas nas regioes dos campos faltantes; se ainda ficar abaixo do limite, usa o OCR refinado completo com o tempo restante. Para ajustar:
+
+```powershell
+python -m src.main --retry-min-score 85 --ocr-retry-timeout 12
+```
+
+Para desativar a segunda tentativa e priorizar velocidade maxima:
+
+```powershell
+python -m src.main --disable-ocr-retry
+```
+
 Para usar Ollama apenas como fallback quando as regras do CRLV falharem:
 
 ```powershell
@@ -90,7 +103,7 @@ Exemplo de retorno:
   "arquivo": "CRLV.pdf",
   "status": "ok",
   "score_confianca": 93,
-  "metodo": "regras_crlv",
+  "metodo": "regras_crlv+ocr_refinado",
   "campos": {
     "placa": "ABC1D23",
     "renavam": "12345678900",
@@ -119,6 +132,18 @@ http://localhost:8000/docs
 
 ```powershell
 pytest
+```
+
+## Configuracao
+
+Variaveis principais:
+
+```text
+RETRY_MIN_SCORE=85
+OCR_RETRY_TIMEOUT_SECONDS=12
+ENABLE_OCR_RETRY=true
+REVIEW_MIN_SCORE=90
+MAX_PAGES=1
 ```
 
 ## Pastas

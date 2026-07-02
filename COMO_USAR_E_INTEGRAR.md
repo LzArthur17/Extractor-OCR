@@ -138,9 +138,20 @@ OLLAMA_MODEL=llama3.1
 OLLAMA_URL=http://localhost:11434
 REVIEW_MIN_SCORE=90
 MAX_PAGES=1
+RETRY_MIN_SCORE=85
+OCR_RETRY_TIMEOUT_SECONDS=12
+ENABLE_OCR_RETRY=true
 ```
 
 Por padrao, a API funciona sem Ollama. O Ollama e usado apenas se o endpoint receber `usar_ollama=true`.
+
+Documentos com `score_confianca` menor que `RETRY_MIN_SCORE` passam por retry progressivo de OCR. Primeiro a API tenta apenas as regioes dos campos faltantes; se ainda ficar abaixo do limite, usa melhoria de imagem e OCR completo com o tempo restante de `OCR_RETRY_TIMEOUT_SECONDS`.
+
+Para priorizar velocidade maxima, use:
+
+```text
+ENABLE_OCR_RETRY=false
+```
 
 ## 7. Rodar testes
 

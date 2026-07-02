@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from src.agente import extrair_campos_com_ollama, revisar_campos_crlv_com_ollama
-from src.crlv_extrator import CRLV_FIELDS, extrair_crlv, score_crlv
+from src.crlv_extrator import CRLV_FIELDS, score_crlv
 from src.exportar_excel import salvar_resultados
 from src.ocr import SUPPORTED_EXTENSIONS, extrair_texto_documento
+from src.pipeline_crlv import extrair_crlv_com_retry_ocr
 from src.qualidade import avaliar_qualidade, separar_para_revisao
 
 
@@ -66,6 +67,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fallback-min-score", type=int, default=3, help="Pontuacao minima da extracao por regras antes de acionar fallback.")
     parser.add_argument("--use-ollama-review", action="store_true", help="Usa Ollama para revisar documentos abaixo do score minimo.")
     parser.add_argument("--review-min-score", type=int, default=90, help="Score abaixo do qual o Ollama revisa os campos.")
+    parser.add_argument("--retry-min-score", type=int, default=85, help="Score abaixo do qual executa OCR refinado.")
+    parser.add_argument("--ocr-retry-timeout", type=int, default=12, help="Tempo maximo do OCR refinado por documento, em segundos.")
+    parser.add_argument("--disable-ocr-retry", action="store_true", help="Desativa a segunda tentativa de OCR para documentos fracos.")
     return parser.parse_args()
 
 
@@ -81,15 +85,30 @@ def listar_documentos(input_dir: Path) -> list[Path]:
 
 def processar_arquivo(arquivo: Path, args: argparse.Namespace) -> dict[str, Any]:
     try:
-        texto = obter_texto_extraido(
+        texto_inicial = obter_texto_extraido(
             arquivo=arquivo,
             idioma=args.ocr_lang,
             max_pages=args.max_pages,
             force_ocr=args.force_ocr,
         )
 
-        campos = extrair_crlv(texto, nome_arquivo=arquivo.name)
-        metodo = "regras_crlv"
+        resultado_retry = extrair_crlv_com_retry_ocr(
+            arquivo=arquivo,
+            nome_arquivo=arquivo.name,
+            idioma=args.ocr_lang,
+            max_pages=args.max_pages,
+            retry_min_score=args.retry_min_score,
+            retry_timeout_seconds=args.ocr_retry_timeout,
+            enable_retry=not args.disable_ocr_retry,
+            texto_inicial=texto_inicial,
+        )
+        texto = resultado_retry["texto"]
+        campos = resultado_retry["campos"]
+        qualidade = resultado_retry["qualidade"]
+        metodo = resultado_retry["metodo"]
+
+        if resultado_retry["ocr_refinado_usado"] and texto != texto_inicial:
+            salvar_texto_extraido(arquivo, texto)
 
         if args.use_ollama_fallback and score_crlv(campos) < args.fallback_min_score:
             campos_ollama = extrair_campos_com_ollama(
@@ -100,8 +119,7 @@ def processar_arquivo(arquivo: Path, args: argparse.Namespace) -> dict[str, Any]
             )
             campos.update({chave: valor for chave, valor in campos_ollama.items() if valor})
             metodo = "regras_crlv+ollama"
-
-        qualidade = avaliar_qualidade(campos)
+            qualidade = avaliar_qualidade(campos)
 
         if args.use_ollama_review and qualidade["score_confianca"] < args.review_min_score:
             campos_ollama = revisar_campos_crlv_com_ollama(

@@ -9,8 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.agente import revisar_campos_crlv_com_ollama
 from src.config import get_settings
-from src.crlv_extrator import CRLV_FIELDS, extrair_crlv
-from src.ocr import SUPPORTED_EXTENSIONS, extrair_texto_documento
+from src.crlv_extrator import CRLV_FIELDS
+from src.ocr import SUPPORTED_EXTENSIONS
+from src.pipeline_crlv import extrair_crlv_com_retry_ocr
 from src.qualidade import avaliar_qualidade
 from src.schemas import ExtracaoResponse, HealthResponse
 
@@ -58,10 +59,18 @@ async def extrair_crlv_upload(
         caminho.write_bytes(conteudo)
 
         try:
-            texto = extrair_texto_documento(caminho, max_pages=settings.max_pages)
-            campos = extrair_crlv(texto, nome_arquivo=nome_arquivo)
-            qualidade = avaliar_qualidade(campos)
-            metodo = "regras_crlv"
+            resultado = extrair_crlv_com_retry_ocr(
+                arquivo=caminho,
+                nome_arquivo=nome_arquivo,
+                max_pages=settings.max_pages,
+                retry_min_score=settings.retry_min_score,
+                retry_timeout_seconds=settings.ocr_retry_timeout_seconds,
+                enable_retry=settings.enable_ocr_retry,
+            )
+            texto = resultado["texto"]
+            campos = resultado["campos"]
+            qualidade = resultado["qualidade"]
+            metodo = resultado["metodo"]
             score_minimo = score_minimo_ollama if score_minimo_ollama is not None else settings.review_min_score
             modelo = modelo_ollama or settings.default_ollama_model
 

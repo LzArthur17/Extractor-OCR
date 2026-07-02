@@ -22,28 +22,29 @@ def test_rejeita_extensao_nao_suportada():
 
 
 def test_upload_retorna_contrato_fixo(monkeypatch):
-    def fake_extrair_texto_documento(*args, **kwargs):
-        return "texto OCR"
-
-    def fake_extrair_crlv(*args, **kwargs):
+    def fake_extrair_crlv_com_retry_ocr(*args, **kwargs):
         return {
-            "tipo_documento": "CRLV",
-            "placa": "ABC1D23",
-            "renavam": "12345678900",
-            "chassi": "9BWZZZ377VT004251",
-            "codigo_crv": "123456789012",
-            "exercicio": "2024",
-            "ano_fabricacao": "2023",
-            "ano_modelo": "2024",
-            "marca_modelo": "FIAT/ARGO",
-            "proprietario": "CLIENTE TESTE",
-            "cpf_cnpj": "529.982.247-25",
-            "municipio": "SAO PAULO",
-            "uf": "SP",
+            "texto": "texto OCR",
+            "metodo": "regras_crlv",
+            "qualidade": {"score_confianca": 91},
+            "campos": {
+                "tipo_documento": "CRLV",
+                "placa": "ABC1D23",
+                "renavam": "12345678900",
+                "chassi": "9BWZZZ377VT004251",
+                "codigo_crv": "123456789012",
+                "exercicio": "2024",
+                "ano_fabricacao": "2023",
+                "ano_modelo": "2024",
+                "marca_modelo": "FIAT/ARGO",
+                "proprietario": "CLIENTE TESTE",
+                "cpf_cnpj": "529.982.247-25",
+                "municipio": "SAO PAULO",
+                "uf": "SP",
+            },
         }
 
-    monkeypatch.setattr(api, "extrair_texto_documento", fake_extrair_texto_documento)
-    monkeypatch.setattr(api, "extrair_crlv", fake_extrair_crlv)
+    monkeypatch.setattr(api, "extrair_crlv_com_retry_ocr", fake_extrair_crlv_com_retry_ocr)
 
     client = TestClient(api.app)
     response = client.post(
