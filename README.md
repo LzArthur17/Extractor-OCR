@@ -91,25 +91,20 @@ Exemplo de retorno:
   "status": "ok",
   "score_confianca": 93,
   "metodo": "regras_crlv",
-  "campos_formulario": {
-    "cliente": "NOME DO PROPRIETARIO",
-    "documento_cliente": "00.000.000/0000-00",
+  "campos": {
     "placa": "ABC1D23",
-    "chassi": "9BW...",
     "renavam": "12345678900",
+    "chassi": "9BW...",
+    "codigo_crv": "123456789012",
     "marca_modelo": "FIAT/ARGO",
     "cor": "BRANCA",
     "combustivel": "FLEX",
     "categoria": "PARTICULAR",
     "ano_fabricacao": "2022",
     "ano_modelo": "2023",
-    "crv": "123456789012",
-    "uf_origem": "SP",
-    "doc_proprietario": "00.000.000/0000-00"
-  },
-  "campos": {
-    "placa": "ABC1D23",
-    "renavam": "12345678900"
+    "proprietario": "NOME DO PROPRIETARIO",
+    "cpf_cnpj": "00.000.000/0000-00",
+    "uf": "SP"
   }
 }
 ```
@@ -118,6 +113,12 @@ Documentacao interativa:
 
 ```text
 http://localhost:8000/docs
+```
+
+## Testes
+
+```powershell
+pytest
 ```
 
 ## Pastas

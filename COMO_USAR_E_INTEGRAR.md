@@ -56,21 +56,20 @@ Exemplo de retorno:
   "status": "ok",
   "score_confianca": 97,
   "metodo": "regras_crlv",
-  "campos_formulario": {
-    "cliente": "NOME DO PROPRIETARIO",
-    "documento_cliente": "00.000.000/0000-00",
+  "campos": {
     "placa": "ABC1D23",
-    "chassi": "9BW...",
     "renavam": "12345678900",
+    "chassi": "9BW...",
+    "codigo_crv": "123456789012",
     "marca_modelo": "FIAT/ARGO",
     "cor": "BRANCA",
     "combustivel": "FLEX",
     "categoria": "PARTICULAR",
     "ano_fabricacao": "2022",
     "ano_modelo": "2023",
-    "crv": "123456789012",
-    "uf_origem": "SP",
-    "doc_proprietario": "00.000.000/0000-00"
+    "proprietario": "NOME DO PROPRIETARIO",
+    "cpf_cnpj": "00.000.000/0000-00",
+    "uf": "SP"
   }
 }
 ```
@@ -101,10 +100,10 @@ Preenchendo os campos:
 
 ```javascript
 const resultado = await extrairCRLV(arquivoSelecionado);
-const campos = resultado.campos_formulario;
+const campos = resultado.campos;
 
-document.querySelector("#cliente").value = campos.cliente ?? "";
-document.querySelector("#documento_cliente").value = campos.documento_cliente ?? "";
+document.querySelector("#cliente").value = campos.proprietario ?? "";
+document.querySelector("#documento_cliente").value = campos.cpf_cnpj ?? "";
 document.querySelector("#placa").value = campos.placa ?? "";
 document.querySelector("#chassi").value = campos.chassi ?? "";
 document.querySelector("#renavam").value = campos.renavam ?? "";
@@ -114,9 +113,9 @@ document.querySelector("#combustivel").value = campos.combustivel ?? "";
 document.querySelector("#categoria").value = campos.categoria ?? "";
 document.querySelector("#ano_fabricacao").value = campos.ano_fabricacao ?? "";
 document.querySelector("#ano_modelo").value = campos.ano_modelo ?? "";
-document.querySelector("#crv").value = campos.crv ?? "";
-document.querySelector("#uf_origem").value = campos.uf_origem ?? "";
-document.querySelector("#doc_proprietario").value = campos.doc_proprietario ?? "";
+document.querySelector("#crv").value = campos.codigo_crv ?? "";
+document.querySelector("#uf_origem").value = campos.uf ?? "";
+document.querySelector("#doc_proprietario").value = campos.cpf_cnpj ?? "";
 ```
 
 ## 5. Score de confianca
@@ -129,7 +128,33 @@ Sugestao simples:
 - `70` a `89`: preencher, mas destacar para conferencia.
 - abaixo de `70`: pedir conferencia manual antes de salvar.
 
-## 6. Rodar em lote
+## 6. Configuracao por ambiente
+
+Voce pode copiar `.env.example` como referencia para configurar:
+
+```text
+CORS_ORIGINS=*
+OLLAMA_MODEL=llama3.1
+OLLAMA_URL=http://localhost:11434
+REVIEW_MIN_SCORE=90
+MAX_PAGES=1
+```
+
+Por padrao, a API funciona sem Ollama. O Ollama e usado apenas se o endpoint receber `usar_ollama=true`.
+
+## 7. Rodar testes
+
+```powershell
+pytest
+```
+
+Os testes conferem:
+
+- contrato basico da API;
+- rejeicao de arquivo invalido;
+- validacao de CPF/CNPJ e score.
+
+## 8. Rodar em lote
 
 Coloque os PDFs em `documentos_entrada/` e execute:
 
@@ -143,4 +168,3 @@ Os resultados ficam em:
 saida/resultados.json
 saida/resultados.xlsx
 ```
-
