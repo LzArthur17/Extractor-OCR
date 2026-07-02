@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+
+documentos_entrada/*
+!documentos_entrada/.gitkeep
+
+saida/*
+!saida/.gitkeep
+
